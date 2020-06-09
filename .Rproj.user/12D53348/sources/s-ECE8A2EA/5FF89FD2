@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1589186746126.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "5FF89FD2",
+    "lastKnownWriteTime" : 1589296625,
+    "last_content_update" : 1589296625791,
+    "path" : "E:/RSTUDIO/R-4.0.0/Copia/ProyectoTD2020/ProyectoTD2020.Rmd",
+    "project_path" : "ProyectoTD2020.Rmd",
+    "properties" : {
+        "cursorPosition" : "610,58",
+        "last_setup_crc32" : "ECE8A2EAd72190a0",
+        "scrollLine" : "607"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

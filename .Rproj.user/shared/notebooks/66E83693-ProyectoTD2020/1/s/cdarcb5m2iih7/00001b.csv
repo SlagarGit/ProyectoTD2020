@@ -1,0 +1,4 @@
+"0","DN <- TD_no_zero %>%"
+"0","  filter(carril == 3)"
+"0","qqPlot(DN$`intensidad total`, id = FALSE,"
+"0","       xlab = ""Norm Quantiles"", ylab = ""Intensidad total"")"

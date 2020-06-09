@@ -1,0 +1,3 @@
+"0","mosaicplot(table(TD_cat$`intensidad total`, TD_cat$`distancia media entre vehiculos`),"
+"0","           main = ""Tabla de Contingencia (mosaico)"","
+"0","           xlab = ""Intensidad total"", ylab = ""Distancia media entre vehiculos"", color = 2:6)"

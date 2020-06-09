@@ -1,0 +1,5 @@
+"0","TD_no_zero <- TD %>%"
+"0","  drop_na(`intensidad total`:`distancia media entre vehiculos`) %>%"
+"0","  filter_if(is.numeric, all_vars(. != 0))"
+"0",""
+"0","rm(list=setdiff(ls(), c(""TD"", ""TD_imputados"", ""TD_no_zero"")))"

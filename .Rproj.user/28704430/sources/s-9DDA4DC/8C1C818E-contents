@@ -1,0 +1,353 @@
+---
+title: "Autoanalizamos"
+author: "Stefan Lahud García"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    echo: yes
+    number_sections: yes
+    theme: flatly
+    toc: yes
+  pdf_document:
+    toc: yes
+subtitle: Tratamiento de Datos, Grado en Ciencia de Datos - UV
+---
+
+```{r setup, cache = F, echo = F, message = F, warning = F, tidy = F}
+# CONFIGURACIÓN GENERAL
+library(knitr)
+options(width = 100)
+# Opciones generales chunks
+opts_chunk$set(echo = T, message = F, error = F, warning = F,
+               comment = NA, fig.align = 'center', dpi = 100, tidy = F,
+               cache.path = '.cache/', fig.path = './figure/')
+# options(xtable.type = 'html')
+knit_hooks$set(inline = function(x) {
+  if(is.numeric(x)) {
+    round(x, getOption('digits'))
+  } else {
+    paste(as.character(x), collapse = ', ')
+  }
+})
+# knit_hooks$set(plot = knitr:::hook_plot_html)
+opts_chunk$set(fig.width=6, fig.height=5)
+```
+
+```{r eval = TRUE, include = FALSE}
+# Especificamos las librerías necesarias en esta lista
+packages = c("tidyr", "dplyr", "ggplot2", "readr", "skimr", "kableExtra", "GGally")
+# use this function to check if each package is on the local machine
+# if a package is installed, it will be loaded
+# if any are not, the missing package(s) will be installed and loaded
+package.check <- lapply(packages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+# verify they are loaded
+search()
+```
+
+```{r include = FALSE}
+rm(list=ls())
+library(tidyr); library(dplyr); library(ggplot2); library(readr); library(skimr); library(kableExtra)
+```
+
+# Preparación del DataFrame (Importación, datos faltantes...)
+
+Primero, debemos importar los datos y ver cómo se han importado; aprovechamos la función __read_delim__ de la libreria `readr` para seleccionar `tab` como separador de columnas, quitar las primeras 27 observaciones que no tienen que ver con el conjunto de datos, así como las primeras dos columnas. Después, ubicamos la varaible Sex como factor, con los niveles "M" y "F"...
+
+```{r}
+Datos <- read_delim("data/NosAutoanalizamos2020 - Hoja1.tsv", 
+                    "\t", escape_double = FALSE,
+                    col_types = cols(X1 = col_skip(), 
+                                     X2 = col_skip()), 
+                    trim_ws = TRUE, skip = 27)
+```
+
+... Posteriormente, al analizar rápido el resultado, podemos percatarnos que las columnas numéricas pertenecientes a las materias ALG, ANM, FP, DCS y MD se han importado como caractér, debido al uso indistinto entre la coma __(,)__ y el punto __(.)__ como separador decimal. Por ende, se utiliza la función `mutate_at` junto con `as.numeric` y `gsub` permiten cambiar las coincidencias de comas por puntos, y posteriormente convertir las columnas a tipo numéricas.
+
+```{r}
+Datos <- mutate_at(Datos, vars(ALG:MD), funs(as.numeric(gsub(",", ".", .))))
+```
+
+Continuamos arreglando el df Datos, haciendo factores a todas aquellas columnas que así lo ameritan. Èstas son: `Sex`, `NW.Hnd`, `Fold`, `Clap`, `Smoke`. Ahora, revisaremos los valores de cada columna con la finalidad de ver si éstos pueden ser convertidos a priori a factor.
+
+```{r}
+Datos %>%
+select(Sex, NW.Hnd, Fold, Clap, Smoke) %>%
+apply(MARGIN = 2, unique)
+```
+
+Como podemos apreciar, todas las variables excepto Sex, tienen valores que de ser considerados como factores, darían un análisis erróneo. Se procede a corregir estos errores, con ayuda de la función `mutate`, utilizamos `ifelse` para seleccionar el caso y, posteriormente `adist` nos ayudará adeterminar entre un caso y otro. Esta función mide la "distancia" entre strings, de tal forma que si una palabra está mal escrita (por ejemplo, isquierda), ésta tendrá una distancia *menor* a la palabra "Izquierda" que a la palabra "Derecha".
+
+```{r}
+Datos <- mutate(Datos, NW.Hnd =ifelse(adist(NW.Hnd, "Derecha") > adist(NW.Hnd, "Izquierda"),
+                                      "Izquierda", "Derecha"),
+                       Fold  = ifelse(adist(Fold, "Derecho")   > adist(Fold, "Izquierdo"),
+                                      "Izquierdo", "Derecho"),
+                       Smoke = ifelse(adist(Smoke, "No")       > adist(Smoke, "Sí"),
+                                      "Sí", "No"),
+                       Clap  = ifelse(Clap == "Ninguna", Clap, ifelse(
+                                      adist(Clap, "Der s Izq") > adist(Clap, "Izq s Der"),
+                                      "Izq s Der", "Der s Izq"))) %>%
+        mutate_at(vars(Sex, NW.Hnd, Fold, Smoke, Clap), funs(as.factor(.)))
+
+skim(Datos)
+```
+
+Antes de seguir, falta revisar si hay datos que estén mal ingresados. Para ello, se utilizará la función `apply`, que permite aplicar la misma función a todas las columnas del dataframe, para obtener máximo y mínimo.
+**NOTA:** Esto no significa estar en busca de outliers, sino en busca de errores en la introducción de datos como por ejemplo, una edad de 150 años, o una calificación mayor al 10 o datos negativos.
+
+```{r}
+apply(select_if(Datos, is.numeric), MARGIN = 2, max, na.rm = TRUE)
+```
+
+Según los datos arrojados, se harán las siguientes suposiciones:
+ * El valor 205.00 en `Wr.Hnd` será considerado como 20.5
+ * El valor 10.88 en `FP` es imposible, se considerará como 10.
+ * El valor 375.00 en `Hwork` será considerado como 37.5
+ 
+```{r}
+Datos$Wr.Hnd[Datos$Wr.Hnd == 205.00] <- 20.5
+Datos$FP[Datos$FP > 10] <- 10
+Datos$Hwork[Datos$Hwork == 375.00] <- 37.5
+apply(select(Datos, Wr.Hnd, FP, Hwork), MARGIN = 2, max, na.rm = TRUE)
+```
+ 
+Repetimos el proceso para `Wr.Hnd` con el valor 195.00, el cual será considerado como 19.5
+
+```{r}
+Datos$Wr.Hnd[Datos$Wr.Hnd == 195.00] <- 19.5
+apply(select(Datos, Wr.Hnd), MARGIN = 2, max, na.rm = TRUE)
+```
+
+Ya que no hay errores en los nùmeros màximos, pasaremos a los mìnimos.
+
+```{r}
+apply(select_if(Datos, is.numeric), MARGIN = 2, min, na.rm = TRUE)
+```
+
+Podemos observar que ningùn valor mìnimo resulta negativo o imposible.
+Ahora, notamos que existen bastantes NA dentro de las columnas numéricas anteriormente descritas, por lo que se procede a imputar datos con la finalidad de no perder mucha información. Para ello, imputaremos empleando la media para cada sexo, calculando las medias usando `summarise_at`, asignar las diferentes medias a cada observación usando `join` y reemplazar los valores vacios usando `mutate` con `ifelse`. Finalmente, ¿habrá algún dato faltante, sin incluir la columna de comentarios?
+
+```{r}
+Imputa <- Datos %>%
+          select(Sex, ALG:MD) %>%
+          group_by(Sex) %>%
+          summarise_at(vars(ALG:MD), funs(mean = mean(., na.rm = TRUE))) %>%
+          right_join(Datos, by = "Sex") %>%
+          mutate(ALG = ifelse(is.na(ALG), ALG_mean, ALG),
+                 ANM = ifelse(is.na(ANM), ANM_mean, ANM),
+                 FP  = ifelse(is.na(FP) , FP_mean , FP ),
+                 DCS = ifelse(is.na(DCS), DCS_mean, DCS),
+                 MD  = ifelse(is.na(MD) , MD_mean , MD )) %>%
+          select(-(ALG_mean:MD_mean))
+
+any(is.na(select(Imputa, -Comentarios)))
+```
+
+
+# Ejercicios
+## Ejercicio 1 y 5. 
+###¿Cuál es el valor medio y la varianza de cada una de las asignaturas cursada en el primer cuatrimestre (debes gestionar los datos perdidos como consideres)?. Emplea algún método de imputación para la los valores faltantes y compara los valores medios antes y después de imputar.
+
+Con la finalidad de observar la variación entre los datos originales y los datos imputados, se realizarán dos análisis: `Stats_orig` basado en el conjunto de datos original `Datos`, y `Stats_impu` basado en el conjunto de datos imputado `Imputa`. Para cada uno:
+ * Se seleccionan las columnas de las asignaturas correspondientes.
+ * Se obtiene la media y desviación estándar para cada variable
+ * Se utiliza `gather` para poner las variables en una columna y el valor en otra.
+ * Se utiliza `separate` para dividir asignatura_estadístico en dos columnas
+ * Se utiliza `spread` para pasar de lista larga a lista ancha para mejor visualización.
+
+```{r}
+Stats_orig <- Datos %>%
+              select(ALG:MD) %>%
+              summarise_all(funs(mean(., na.rm = TRUE), sd(., na.rm = TRUE))) %>%
+              gather(key = "variables", value = "valor") %>%
+              separate(col = 1, into = c("asignatura", "stat"), sep = "_") %>%
+              spread(key = stat, value = valor) 
+              kable(head(Stats_orig), "html") %>% 
+              kable_styling()
+              
+Stats_impu <- Imputa %>%
+              select(ALG:MD) %>%
+              summarise_all(funs(mean, sd)) %>%
+              gather(key = "variables", value = "valor") %>%
+              separate(col = 1, into = c("asignatura", "stat"), sep = "_") %>%
+              spread(key = stat, value = valor)
+              kable(head(Stats_impu), "html") %>% 
+              kable_styling()
+```
+
+## Ejercicio 2. 
+### Determina la matriz de correlación entre todas las variables numéricas e indica cuáles tienen una correlación superior a 0.8.
+
+```{r}
+library(GGally)
+Imputa %>%
+  select_if(is.numeric) %>%
+  ggcorr()
+
+Imputa %>%
+  select_if(is.numeric) %>%
+  ggpairs()
+```
+
+Según la matriz, podemos determinar que ninguna pareja de variables tiene una correlación superior a **0.8**, siendo la correlación más alta correspondiente a `Hwork` y `Age` con **0.698**
+ 
+## Ejercicio 3.
+### ¿Hay alguna relación entre las variables categóricas?
+
+```{r}
+#¿Cuáles variables son factor?
+colnames(select_if(Datos, is.factor))
+
+#Prueba chi2 para cada combinación de variables categóricas posible:
+chisq.test(table(Datos$Sex, Datos$NW.Hnd), correct = FALSE)
+chisq.test(table(Datos$Sex, Datos$Fold), correct = FALSE)
+chisq.test(table(Datos$Sex, Datos$Clap), correct = FALSE)
+chisq.test(table(Datos$Sex, Datos$Smoke), correct = FALSE)
+chisq.test(table(Datos$NW.Hnd, Datos$Fold), correct = FALSE)
+chisq.test(table(Datos$NW.Hnd, Datos$Clap), correct = FALSE)
+chisq.test(table(Datos$NW.Hnd, Datos$Smoke), correct = FALSE)
+chisq.test(table(Datos$Fold, Datos$Clap), correct = FALSE)
+chisq.test(table(Datos$Fold, Datos$Smoke), correct = FALSE)
+chisq.test(table(Datos$Clap, Datos$Smoke), correct = FALSE)
+```
+
+Podemos observar que las parejas de variables categóricas que generan un valor __p-value__ **menor** que 0.05 y, por tanto, son dependientes, son:
+
+ * NW.Hnd y Clap
+ * Fold y Clap
+
+Entendiendo también que la pareja de variables NW.Hnd y Fold están muy cerca del umbral. Ahora, se procede a graficar en una gráfica de mosaico los resultados.
+
+```{r}
+mosaicplot(table(Datos$NW.Hnd, Datos$Clap), main = "NW.Hnd y Clap", 
+           xlab = "NW.Hnd", ylab = "Clap", color = 2:6)
+mosaicplot(table(Datos$Fold, Datos$Clap), main = "Fold y Clap", 
+           xlab = "Fold", ylab = "Clap", color = 2:6)
+mosaicplot(table(Datos$NW.Hnd, Datos$Fold), main = "NW.Hnd y Fold", 
+           xlab = "NW.Hnd", ylab = "Fold", color = 2:6)
+```
+
+Y ahora un ejemplo de una gráfica de mosaico de dos variables altamente independientes:
+
+```{r}
+mosaicplot(table(Datos$Sex, Datos$Smoke), main = "Sex y Smoke", 
+           xlab = "Sex", ylab = "Smoke", color = 2:6)
+```
+
+
+## Ejercicio 4.
+### Determina si se observan outliers.
+
+Para este ejercicio, se utilizará la detección de outliers con cuatro métodos: 3sigma, hampel, boxplot y percentiles. Primero, comenzamos por crear las funciones de detección de cada método.
+
+* **Regla 3 sigma** `reglasigma(x)`: Considera que los datos siguen una distribución gaussiana. Datos típicos caracterizados por la media y la dispersión por la varianza. Valores por encima de 3 desviaciones típicas se consideran outliers.
+
+* **Identificador Hampel** `reglahampel(x)`: Utiliza estimadores robustos y no presupone que los datos siguen una distribución gaussiana. Datos típicos caracterizados por la mediana y la dispersión por la _median absolute deviation from the median_ (MADM). Valores por encima de 3 MADM se consideran outliers.
+   ** El valor MADM, se calcula como $1.4826\cdot\textrm{median}(|x - \textrm{median}|)$.
+
+* **Regla boxplot** `reglaboxplot(x)`: A partir de los datos se calcula su diagrama de caja (boxplot) y se definen como datos típicos superiores hasta el cuartil 75%, $x_s$; datos típicos inferiores hasta el cuartil 25%, $x_i$; y la dispersión se define como el rango intercuartílico ($IQR= x_s-x_i$). Valores por encima de $x_s+1.5\cdot IQR$ o por debajo de $x_i-1.5\cdot IQR$ se consideran outliers.
+
+* **Percentiles** `reglapercentil(x)`: Cualquier valor que esté fuera del rango del percentil 5% y 95% se puede considerar como atípico.
+
+```{r}
+# MADM median absolute deviation from the median
+madm <- function(x, na.rm = TRUE)
+  { 
+    x <- na.omit(x)
+    aux <- NULL
+    for(i in 1:length(x))
+    {
+      aux <- append(aux, abs(x[i] - mean(x)))
+    }
+    return(1.4826*mean(aux))
+  }
+# Regla 3 sigma
+reglasigma <- function(x)
+{
+  x <- na.omit(x)
+  mean <- mean(x)
+  sigma <-  sd(x)
+  va <- NULL
+  for(i in 1:length(x))
+  {
+    if(x[i] < mean - 3*sigma | x[i] > mean + 3*sigma)
+    {
+      va <- append(va, x[i])
+    }
+  }
+  return(paste(sort(va), collapse = ", "))
+  #return(sort(va))
+}
+# Identificador Hampel
+reglahampel <- function(x)
+{
+  x <- na.omit(x)
+  median <- median(x)
+  madm <- madm(x)
+  va <- NULL
+  for(i in 1:length(x))
+  {
+    if(x[i] < median - 3*madm | x[i] > median + 3*madm)
+    {
+      va <- append(va, x[i])
+    }
+  }
+  return(paste(sort(va), collapse = ", "))
+  #return(sort(va))
+}
+# Regla boxplot
+reglaboxplot <- function(x)
+{
+  x <- na.omit(x)
+  Q25 <- quantile(x, probs = c(0.25), names = FALSE)
+  Q75 <- quantile(x, probs = c(0.75), names = FALSE)
+  IQR <- IQR(x)
+  va <- NULL
+  for(i in 1:length(x))
+  {
+    if(x[i] < Q25 - 1.5*IQR | x[i] > Q75 + 1.5*IQR)
+    {
+      va <- append(va, x[i])
+    }
+  }
+  return(paste(sort(va), collapse = ", "))
+  #return(sort(va))
+}
+# Percentiles
+reglapercentil <- function(x)
+{
+  x <- na.omit(x)
+  Q05 <- quantile(x, probs = c(0.05), names = FALSE)
+  Q95 <- quantile(x, probs = c(0.95), names = FALSE)
+  va <- NULL
+  for(i in 1:length(x))
+  {
+    if(x[i] < Q05 | x[i] > Q95)
+    {
+      va <- append(va, x[i])
+    }
+  }
+  return(paste(sort(va), collapse = ", "))
+  #return(sort(va))
+}
+```
+
+```{r}
+outliers <- function(x)
+{
+  c(tres_sigma = reglasigma(x),
+    hampel = reglahampel(x),
+    boxplot = reglaboxplot(x),
+    percentil = reglapercentil(x))
+}
+outliers.df <- as.data.frame(do.call(rbind, lapply(select_if(Datos, is.numeric), outliers)))
+kable(head(outliers.df, n = 12), format = "html") %>% 
+  kable_styling()
+```
+
+

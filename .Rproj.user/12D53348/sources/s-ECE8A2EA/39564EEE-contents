@@ -1,0 +1,697 @@
+---
+title: "Mini Proyecto 2020. Datos Tráfico"
+author: "Stefan Lahud García, Olivia Sarahì Vargas Vásquez"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    echo: yes
+    number_sections: yes
+    theme: flatly
+    toc: yes
+subtitle: Tratamiento de Datos, Grado en Ciencia de Datos - UV
+---
+
+```{r setup, cache = F, echo = F, message = F, warning = F, tidy = F}
+# CONFIGURACIÓN GENERAL
+library(knitr)
+options(width = 100)
+# Opciones generales chunks
+opts_chunk$set(echo = T, message = F, error = F, warning = F,
+               comment = NA, fig.align = 'center', dpi = 100, tidy = F,
+               cache.path = '.cache/', fig.path = './figure/')
+# options(xtable.type = 'html')
+knit_hooks$set(inline = function(x) {
+  if(is.numeric(x)) {
+    round(x, getOption('digits'))
+  } else {
+    paste(as.character(x), collapse = ', ')
+  }
+})
+# knit_hooks$set(plot = knitr:::hook_plot_html)
+knitr::opts_chunk$set(fig.width=8, fig.height=4)
+```
+
+```{r eval = TRUE, include = FALSE}
+# Especificamos las librerías necesarias en esta lista
+packages = c("tidyverse", "knitr", "ggplot2", "tidyr", "dplyr", "skimr", "lubridate", "GGally", "car", "knitr")
+# use this function to check if each package is on the local machine
+# if a package is installed, it will be loaded
+# if any are not, the missing package(s) will be installed and loaded
+package.check <- lapply(packages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+# verify they are loaded
+search()
+```
+
+```{r, echo=F}
+library(readr); library(tidyverse); library(ggplot2); library(tidyr); library(dplyr); library(skimr); library(lubridate); library(GGally); library(car)
+```
+
+# Tareas realizadas por cada uno de los miembros del equipo:
+
+
+## Stefan. Lahud (_coordinador_). Tareas:
+
+* Tarea 1.1
+* Tarea 1.2
+
+## Sarahí. Vargas. Tareas:
+
+* Tarea 2.1
+* Tarea 2.2
+
+# Introducción y objetivos.
+
+El objetivo de este trabajo es enfrentar un problema de tratamiento de datos que abarque todas las etapas que se han visto a lo largo del curso de Tratamiento de Datos, resolviendo los problemas que se vayan generando de forma autónoma. Dichas etapas son:
+
+  1. Importación de datos.
+  2. Visualización de datos.
+  3. Manejo de datos.
+  4. Análisis exploratorio.
+  
+En este proyecto se analizarán un conjunto de datos reales proporcionados por la empresa __CPS Infraestructuras, Movilidad y Medio ambiente (www.cps.es)__, exclusivamente con la finalidad de realizar este proyecto. Así mismo, se dividirá en las siguientes fases:
+
+  0. Lectura de la documentación __(Codebook)__ proporcionada con los datos.
+  1. Importación de datos __./data__
+  2. Acondicionamiento de los datos para que se correspondan con un `tidy data`.
+  3. Análisis exploratorio. - ¿Qué datos tenemos? - ¿Qué análisis podemos plantearnos? - ¿Qué podemos buscar en estos datos?
+  4. Utilización de todas las herramientas que se han ido viendo a lo largo del curso, para analizar y describir los datos (análisis univariante, bivariante, relaciones entre variables, etc), inclusión de información adicional que se considere que pueda ser de utilidad (enriquecimiento de los datos).
+
+# Importación de los datos
+
+Para comenzar con el trabajo, es necesario importar los ficheros de los cuatro carriles para cada año, es decir, ocho __data frames__. A continuación, se explica el proceso paso a paso:
+
+1. Utilizar la librería **readr**
+2. **read.csv.** Lectura de archivos con extensión .csv; se selecciona como separador al punto y coma (sep = ";"), indicando que el fichero tiene cabecera, y que no se desean convertir las cadenas de texto a factores.
+3. **list.files.** Obtención de un listado -ordenado- de los ficheros que se encuentran dentro de la carpeta __data__.
+4. **lapply.** Aplicación de la función __read.csv__ en el listado ordenado obtenido con __list.files__ todo guardado en un `Large list` llamado __import__ con los ocho ficheros.
+5. **rbind.** Utilizada a la par con `do.call` sobre __import__ para concatenar los ocho ficheros en uno solo, llamado __All__.
+6. Asignación del formato **NA** a las coincidencias con **\\N**, ya que, como se indica en el Codebook, ésta ha sido la forma de representar a los valores faltantes.
+
+```{r, echo=F}
+rm(list=ls())
+import <- lapply(list.files("./data", full.names = TRUE),
+                 read.csv, header = TRUE, sep = ";", stringsAsFactors = FALSE)
+
+All <- do.call(rbind, import)
+All[All == "\\N"] <- NA
+skim(All)
+```
+
+Se tiene ahora un __dataframe__ llamado All, que contiene la concatenación de los años 2017 y 2018 según el carril, de forma ordenada; sin embargo, se desea colocar un identificador de carril, para saber la información de qué carril proviene. Para ello se crea el vector `cortes`. En él, se utiliza la función **grep** para identificar las observaciones en donde la variable `fecha.y.hora` comience por `01/01/` y termine por ` 0:00`, mediante la utilización de la expresión regular:
+
+`pattern = "^01/01/.* 0:00$"`
+
+Es decir, se encontrarán las (ocho) filas en donde esté presente el primer minuto del primer día del año. De esta manera, sabremos colocar el carril de donde proviene la información.
+
+Se procede a introducir toda la información a un solo __dataframe__ llamado `TD`. A continuación, se explicará cada función en orden de aparición:
+
+1. TD resulta de una transformación del __dataframe All__.
+2. **mutate.** Convierte a la variable `fecha.y.hora` en tipo __DateTime__ con ayuda de la función dmy_hm de la librería lubridate; también, crea la variable `carril` a partir del vector previamente definido `corte` y una concatenación de funciones __ifelse()__.
+3. **complete.** Con ayuda de la función __seq.POSIXt__, ayuda a completar el dataframe con las fechas y horas omitidas en los documentos originales.
+4. **mutate.** Crea las variables `semana` y `dia_semana`, quienes, gracias a las funciones __week__ y __wday__ de la librería **lubridate**, obtienen valores de número de semana y nombre del día de la semana, respectivamente.
+5. **arrange.** Permite ordenar los datos según la fecha y hora.
+6. **separate.** Uso de la función en tres ocasiones para dividir la columna `fecha.y.hora`, quien contiene toda la información temporal, en cinco variables independientes: `año`, `mes`, `día`, `hora`, `minutos`.
+7. **select.** Reorden de las columnas dentro del __dataframe__ (estético).
+8. **mutate_if.** Función que convierte las variables incialmente consideradas como caracteres en el __dataframe All__, en numéricas.
+9. **mutate.**. Conversión de la variable `carril` en factor, y conversión de la variable `mes` de número a factor, utilizando la función __month__.
+10. **colnames**. Finalmente, se utiliza la función __gsub__ para sustituir los puntos leídos en las cabeceras del dataframe, por espacios. Por ejemplo: `fecha.y.hora` por `fecha y hora`
+
+```{r, echo=F}
+cortes <- grep(pattern = "^01/01/.* 0:00$", All$fecha.y.hora)
+TD <- All %>%
+      mutate(fecha.y.hora = dmy_hm(fecha.y.hora),
+             carril = ifelse(row_number() < cortes[2], 1,
+                      ifelse(row_number() < cortes[3], 2,
+                      ifelse(row_number() < cortes[4], 3,
+                      ifelse(row_number() < cortes[5], 4,
+                      ifelse(row_number() < cortes[6], 1,
+                      ifelse(row_number() < cortes[7], 2,
+                      ifelse(row_number() < cortes[8], 3, 4)))))))) %>%
+      complete(fecha.y.hora = seq.POSIXt(min(fecha.y.hora), max(fecha.y.hora),
+                                         by = "mins"), carril) %>%
+      mutate(semana = (week(fecha.y.hora) - (week(min(fecha.y.hora)))),
+             dia_semana = wday(fecha.y.hora, label = TRUE, abbr = FALSE)) %>%
+      arrange(fecha.y.hora) %>%
+      separate(fecha.y.hora, c("anio", "mes", "resto"),
+               sep = "-", convert = TRUE) %>%
+      separate(resto, c("dia", "tiempo"),
+               sep = " ", convert = TRUE) %>%
+      separate(tiempo, c("hora", "minutos", "segundos"),
+               sep = ":", convert = TRUE) %>%
+      select(-segundos) %>%
+      select(semana, dia_semana, dia, mes, anio, everything()) %>%
+      mutate_if(is.character, as.numeric) %>%
+      mutate(carril = as.factor(carril),
+             mes = month(mes, label = TRUE))
+
+colnames(TD) <- gsub(".", " ", colnames(TD), fixed = TRUE)
+```
+
+# Imputación de datos
+
+Ahora, nos encontramos con un __dataframe TD__ que tiene múltiples filas en donde se presenta la fecha completa, pero que las filas no contienen valores faltantes. Es por ello que se procede a crear el __dataframe TD_imputados__, con la finalidad de imputar los valores faltantes dentro de un dataframe completo. Se procede de la siguiente manera:
+
+1. TD_imputados resulta de una transformación del __dataframe TD__.
+2. **select.** Selecciona columnas importantes del __dataframe TD__, como lo son `año`, `hora`, `carril` y todas las variables numéricas.
+3. **group_by.** Se agrupa el data frame por `año`, `hora` y `carril`, de tal forma que se obtendrá un total de 2 * 24 * 4 = 192 grupos.
+4. **summarise_at.** Para cada grupo, y para cada variable numérica, crea las variables `VarNum_mean` correspondiente a la media de la variable en el grupo correspondiente. Por ejemplo, la media de la variable `intensidad total` en el año 2017 a la hora 0, en el carril 1.
+5. **ungroup.** Permite desagrupar.
+6. **right_join.** Gracias a esta función, se unen el __dataframe__ que se ha ido trabajando, junto con el __dataframe__ original __TD__, de tal forma que, ahora, se cuenta con una varible extra `VarNum_mean` por cada columna numérica existente `VarNum` 
+7. **mutate.** Ahora, para cada variable numérica, se hace una lectura de si su valor es o no es **NA** con la función __ifelse__ y __is.na()__: si existe un valor, lo mantiene; si no, inserta el valor obtenido en `VarNum_mean`.
+8. **mutate_if.** Función que convierte las variables incialmente consideradas como caracteres en el __dataframe All__, en numéricas.
+9. **select.**. Función utilizada en dos ocasiones, con la finalidad de quitar del dataframe las columnas `VarNum_mean` -ya que ya realizaron su trabajo- y reorganizar las variables restantes (estética).
+
+Una vez realizado el nuevo __dataframe__, se utilizan las funciones __kable__ y __head__ para mostrar los primeros quince valores del __dataframe TD_imputados__ y desplegarlos de la manera más estética posible dentro del documento HTML ejecutado.
+
+```{r, echo=F}
+TD_imputados <- TD %>%
+  select(anio, hora, carril:`distancia media entre vehiculos`) %>%
+  group_by(anio, hora, carril) %>%
+  summarise_at(vars(`intensidad total`:`distancia media entre vehiculos`),
+               list(mean = ~mean(., na.rm = TRUE))) %>%
+  ungroup() %>%
+  right_join(TD, c('anio', 'hora', 'carril')) %>%
+  mutate(`intensidad total` = ifelse(is.na(`intensidad total`),
+                                          `intensidad total_mean`, `intensidad total`),
+         `intensidad ligeros` = ifelse(is.na(`intensidad ligeros`),
+                                          `intensidad ligeros_mean`, `intensidad ligeros`),
+         `intensidad pesados` = ifelse(is.na(`intensidad pesados`),
+                                          `intensidad pesados_mean`, `intensidad pesados`),
+         `velocidad media` = ifelse(is.na(`velocidad media`),
+                                          `velocidad media_mean`, `velocidad media`),
+         `ocupacion` = ifelse(is.na(`ocupacion`),
+                                          `ocupacion_mean`, `ocupacion`),
+   `distancia media entre vehiculos` = ifelse(is.na(`distancia media entre vehiculos`),
+            `distancia media entre vehiculos_mean`, `distancia media entre vehiculos`)) %>%
+  select(-(`intensidad total_mean`:`distancia media entre vehiculos_mean`)) %>%
+  select(carril, semana, dia_semana, dia, mes, anio, hora, minutos, everything())
+
+kable(head(TD_imputados, n = 15), 
+      format  = "html", 
+      caption = "Cabecera para Datos de Tráfico 2017-2018",
+      align   = "clcccccccccccc",
+      table.attr = "style='width:100%;'")
+
+skim(TD_imputados)
+```
+
+Por último, se crea el __dataframe TD_no_zero__, que nace de la ideología de obtener un __dataframe__ con únicamente los datos de cuando **un automovil ha pasado durante el minuto de observación**, es decir, un __dataframe__ sin filas llenas de ceros ni valores faltantes.
+
+1. TD_no_zero resulta de una transformación del __dataframe TD__.
+2. **drop_na.** Elimina observaciones del __dataframe TD__, donde todas las variables numéricas estén faltantes: desde `intensidad total` hasta `ditancia media entre vehiculos`.
+3. **filter_if.** Se filtra con la misma ideología que con __drop_na()__ pero ahora, con la condición de que todos los valores de todas las variables numéricas, sean igual a 0.
+
+```{r, echo=F}
+TD_no_zero <- TD %>%
+  drop_na(`intensidad total`:`distancia media entre vehiculos`) %>%
+  filter_if(is.numeric, all_vars(. != 0))
+
+rm(list=setdiff(ls(), c("TD", "TD_imputados", "TD_no_zero")))
+```
+
+# Búsqueda de errores en los datos
+
+Es importante, antes de comenzar con un análisis en los datos, buscar errores en la introducción de los mismos, así como valores máximos y mínimos __a priori__. Para ello, se comprueban tres parámetros:
+
+ 1. Si el valor de `intensidad total` es cero, entonces el de `velocidad media` también debe de serlo, y viceversa. En otras palabras, esta situación sería incoherente y, por ende, deberíamos de ver si existen o no dicha situación. A continuación se muestra la diferencia entre el número de filas antes y después del filtrado.
+```{r, echo=F}
+nrow(filter(TD_imputados,
+            (`intensidad total` == 0 & `velocidad media` == 0)|
+            (`intensidad total` != 0 & `velocidad media` != 0))) - nrow(TD_imputados)
+```
+ 
+ 2. Corroborar si hay o no algún *NA*. Se utilizan las funciones __any__ y __is.na()__.
+```{r, echo=F}
+any(is.na(TD_imputados))
+```
+ 
+ 3. Confirmar si hay algún valor negativo. Se crea una función que busca si hay algún valor negativo en los datos de una fila, y es aplicada mediante __apply__ a las filas de los datos numéricos de TD_imputados. Finlamente, se busca si hay algún resultado `Verdadero`.
+```{r, echo=F}
+any(apply(select_if(TD_imputados, is.numeric), 1, function(row) any(row < 0)))
+```
+
+Esto quiere decir que no hay incongruencias en los datos y que tampoco existen valores faltantes. Sin embargo, es importante recalcar que estos _tests_ no tienen nada que ver en cuestión de _datos anómalos_ sino que solo descarta el hecho de tener errores en la introducción de datos o, en su defecto, la omisión de alguno.
+
+# Valores frontera (máximos)
+
+Hemos descubierto que no existen valores negativos, por lo que la búsqueda de los valores mínimos no resulta muy interesante. No obstante, la búsqueda para valores máximos es indispensable para conocer los datos de forma visual. Para ello, se sigue el procedimiento:
+
+1. Se utiliza al __dataframe TD_imputados__ para la búsqueda.
+2. **select_if.** Selecciona todas las variables numéricas del __dataframe TD_imputados__.
+3. **apply.** Una a una, se les ordena de forma decendiente, el resultado es almacenado en una tabla con dicha información.
+4. **as.data.frame().** El resultado, entonces, se guarda como un __dataframe__.
+5. **head().** Muestra los primeros 15 valores, es importante notar que los valores mostrados en una fila son independientes, es decir, no provienen de las observaciones originales.
+6. **kable().** Simplemente muestra de una forma estética, el resultado con formato HTML y atributos varios.
+
+```{r, echo=F}
+TD_imputados %>%
+  select_if(is.numeric) %>%
+  apply(MARGIN = 2, sort, decreasing = TRUE) %>%
+  as.data.frame() %>%
+  head() %>%
+  kable(format  = "html", table.attr = "style='width:100%;'")
+```
+
+# Estadísticos de los datos
+
+A continuación, se busca crear una tabla en donde se muestren los principales valores estadísticos de las muestras, en un conjunto de datos selecto. Para ello, se creará el conjunto __TD_horas__, que contendrá información tratada relevante, referente a cada hora de ambos años. El procedimiento se muestra a continuación:
+
+1. TD_horas resulta de una transformación del __dataframe TD_imputados__.
+2. **select.** Selecciona columnas importantes del __dataframe TD_imputados__, como lo son `año`, `mes`, `día`, `hora` y todas las variables numéricas.
+3. **group_by.** Se agrupa el data frame por `año`, `mes`, `día` y `hora`, de tal forma que se obtendrá un total de 2 * 12 * 365 * 24 = 210,240 grupos.
+4. **summarise_at.** Para cada grupo, y para cada variable numérica, crea las variables `VarNum_mean` correspondiente a la media y `VarNum_sum` correspondiente a la suma (por minuto) de la variable, en el grupo correspondiente.
+5. **ungroup.** Permite desagrupar.
+6. **select.** La finalidad del punto 4 fue obtener la suma acumulada de las variables referentes a la intenisdad, y la media ponderada de las variables referentes a velocidad, ocupación y distancia. Por lo tanto, se eliminan las variables restantes generadas.
+7. **colnames**. Finalmente, se utiliza la función __gsub__ para eliminar lo situado después del "_" añadido, leídos en las cabeceras del dataframe. Por ejemplo: `intensidad total_sum` por `intensidad total`.
+
+Así, obtenemos un __dataframe__ con los valores estadísticos por variable y por hora.
+
+```{r, echo=F}
+TD_horas <- TD_imputados %>%
+  select(hora, dia, mes, anio,
+         `intensidad total`:`distancia media entre vehiculos`) %>%
+  group_by(anio, mes, dia, hora) %>%
+  summarise_at(vars(`intensidad total`:`distancia media entre vehiculos`),
+               list(sum = ~sum(.), mean = ~mean(.))) %>%
+  ungroup() %>%
+  select(-(`velocidad media_sum`:`distancia media entre vehiculos_sum`),
+         -(`intensidad total_mean`:`intensidad pesados_mean`)) 
+
+colnames(TD_horas) <- gsub("\\_.*", "", colnames(TD_horas))
+```
+
+Ahora bien, a partir del conjunto obtenido, se obtiene otro conjunto llamado __TD_horas_stats__, que muestra las estadísticas de una forma ordenada. Se obtiene como se muestra a continuación:
+
+1. TD_horas_stats resulta de una transformación del __dataframe TD_horas__.
+2. **select.** Selecciona únicamente las columnas numéricas del __dataframe TD_horas__.
+3. **summarise_all.** Para cada variable numérica, crea una variables correspondiente al promedio, la desviacióne estándar, la mediana, el rango intercuartil y los cuartiles de 25% y 75%.
+5. **ungroup.** Permite desagrupar.
+6. **gather.** Se utiliza para convertir la información en una tabla larga, de tal forma que los nombres de las variables pasan a ser nombres de una variable llamada `Variables` y sus valores se almacenan en otra columna llamada `Valores`.
+7. **separate.** Utilizada para separar, mediante el caracter "_", la columna `Variables` en dos columnas: `Variables` y `stat`.
+8. **spread.** Ahora bien, se reagrupan los valores dentro de la variable `stat` de nuevo en una tabla de forma larga, con dichos valores como nombres de variables.
+
+Una vez realizado el nuevo __dataframe__, se utilizan las funciones __kable__ y __head__ para mostrar los valores del __dataframe TD_horas_stats__ y desplegarlos de la manera más estética posible dentro del documento HTML ejecutado.
+
+```{r, echo=F}
+TD_horas_stats <- TD_horas %>%
+  select(`intensidad total`:`distancia media entre vehiculos`) %>%
+  summarise_all(list(Promedio   = ~round(mean(.), 1),
+                     Desv.est   = ~round(sd(.), 1),
+                     Mediana    = ~round(median(.), 1),
+                     IQR        = ~round(IQR(.), 1),
+                     Q05    = ~round(quantile(., probs = 0.05), 1),
+                     Q25    = ~round(quantile(., probs = 0.25), 1),
+                     Q75    = ~round(quantile(., probs = 0.75), 1),
+                     Q95    = ~round(quantile(., probs = 0.95), 1))) %>%
+  ungroup() %>%
+  gather(key = "variables", value = "valor") %>%
+  separate(col = 1, into = c("Variable", "stat"), sep = "_") %>%
+  spread(key = stat, value = valor) %>%
+  select(Variable, Mediana, Desv.est, Q05, Q25, Promedio, Q75, Q95, IQR)
+  head(TD_horas_stats) %>%
+  kable(format = "html", align = "lcccc", table.attr = "style='width:100%;'")
+```
+
+
+# Visualización de los datos.
+
+En este apartado, se buscará y desarrollará código que conteste ciertas preguntas. Es decir, gráficas y representaciones visuales de las preguntas planteadas.
+
+```{r, echo=F}
+blank_theme <- theme_minimal() + 
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid = element_blank(),
+    axis.ticks = element_blank(),
+    plot.title = element_text(size = 14, face = "bold")
+  )
+
+basics_theme <- theme_minimal() +
+  theme(
+    strip.text = element_text(size = 14),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.title = element_blank(),
+    panel.grid = element_blank(),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 14))
+
+basics_theme2 <- theme_minimal() +
+  theme(
+    strip.text = element_text(size = 14),
+    axis.text.x = element_text(angle = 20, hjust = 1),
+    legend.title = element_blank(),
+    panel.grid = element_blank(),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 14))
+```
+
+
+## Distribución de los datos con datos imputados y sin datos imputados ni ceros
+
+**¿Cómo se distribuyen los datos en los diferentes dataframes obtenidos?**
+Para contestar a esta pregunta, se procede de la siguiente manera:
+
+1. Se utiliza al __dataframe TD_imputados__ y __TD_no_zero__ respectivamente.
+2. **select.** Selecciona todas las variables numéricas que surgen de una medición previa, es decir, desde `intensidad total` hasta `distancia media entre vehiculos`.
+3. **gather.** Con la finalidad de mostrar los datos, toda la selección se convierte en una tabla larga, donde en la columna `Medición` se encuentra el nombre de la medición y en la columna `Valor`, se encuentra el valor de dicha medición.
+4. **mutate.** Convierte la variable `Medición` en tipo factor.
+5. **ggplot().** Comienza a graficar, poniendo en el eje de las abscisas a la variable `Medición` y en el eje de las ordenadas al eje `Valor`, coloreando así por cada tipo distinto de `Medición`.
+6. **geom_boxplot().** Representación de la información en forma de caja y bigotes.
+7. **theme_bw().** Estilo de la gráfica.
+
+```{r, echo=F}
+select(TD_imputados, `intensidad total`:`distancia media entre vehiculos`) %>%
+  gather(key = "Medicion", value = "Valor") %>%
+  mutate(Medicion = as.factor(Medicion)) %>%
+  ggplot(aes(x = Medicion, y = Valor, fill = Medicion)) + 
+  geom_boxplot() +
+  basics_theme2
+  
+select(TD_no_zero, `intensidad total`:`distancia media entre vehiculos`) %>%
+  gather(key = "Medicion", value = "Valor") %>%
+  mutate(Medicion = as.factor(Medicion)) %>%
+  ggplot(aes(x = Medicion, y = Valor, fill = Medicion)) + 
+  geom_boxplot() +
+  basics_theme2
+```
+
+Podemos notar cómo la distribución de los datos depende fuertemente de los datos eliminados, ya que éstos representan 
+
+## Capacidad en intensidad total admisible por carril.
+
+**¿Cómo se distribuyen los datos referentes a la intenidad total por hora?**
+Ahora, antes de progresar, se deberá corroborar que -atendiendo a lo adoptado en HCM 2000 (high capacity Manual)- la intensidad no podrá ser superior a la intensidad máxima admisible configurada para el tipo de vía considerada en cada caso. La capacidad de una vía de alta capacidad es  2400  vehículos a la hora por carril. Para contestar a esta pregunta, se procede de la siguiente manera:
+
+Obtención del primer dataframe __Q1__.
+1. Se utiliza al __dataframe TD_imputados__.
+2. **select.** Selecciona todas las variables numéricas que surgen de una medición previa, es decir, desde `intensidad total` hasta `distancia media entre vehiculos`, así como las partes de fecha referentes a la hora: `año`, `mes`, `día`, `hora`.
+3. **group_by.** Se agrupa la información ahora por cada hora en el __dataframe__ y por `carril`.
+4. **summarise.** Obtiene la suma (minuto a minuto, por hora) de la `intensidad total`, para obtener la intensidad total por hora.
+5. **mutate.** Se utiliza para categorizar la variable `intensidad total` guardada en `Nivel de intensidad` en cuatro categorías:
+ * Para intensidades menores a 800, se clasificará como **BAJA**.
+ * Para intensidades menores a 1600, se clasificará como **MEDIA**.
+ * Para intensidades menores a 2400, se clasificará como **ALTA**.
+ * Para cualquier otra intensidad, se clasificará como **EXCESIVA**.
+
+Obtención de dataframe secundario __Q1.1__. **Tabla de frecuencias**
+1. Se utiliza al __dataframe Q1__.
+2. **group_by.** Se agrupa la información ahora por cada categoría en el `Nivel de intensidad`.
+3. **summarise.** Obtiene el número de repeticiones de cada categoría.
+4. **mutate.** Se ordenan los niveles del factor `Nivel de intensidad`.
+
+Ahora, resultan tres gráficos:
+ a) El primer gráfico resulta en una comparativa entre casos categorizados del nivel de intensidad por hora, de forma que se ve una perspectiva según el **número de casos** por categoría.
+ 
+ b) El segundo gráfico muestra un contenido similar, ahora se muestra la comparativa entre casos categorizados, de forma porcentual en un gráfico de pastel.
+ 
+ c) Finalmente, se muestran un gráfico de violín, separado por carril, en donde se muestra visualmente la distribución de los datos de cada carril. Así mismo se sitúa una línea horizontal marcando el límite de los 2400  vehículos a la hora por carril -atendiendo a lo adoptado en HCM 2000 (high capacity Manual)-, viendo claramente cómo en ningún momento en los años recopilados, se cruzó dicho umbral.
+
+```{r, echo=F}
+Q1 <- TD_imputados %>%
+  select(hora, dia, mes, anio, `intensidad total`, carril) %>%
+  group_by(anio, mes, dia, hora, carril) %>%
+  summarise(`intensidad por hora` = sum(`intensidad total`)) %>%
+  mutate(`Nivel de intensidad` = ifelse(`intensidad por hora` < 800 , "BAJA",
+                                 ifelse(`intensidad por hora` < 1600, "MEDIA",
+                                 ifelse(`intensidad por hora` < 2400, "ALTA", 
+                                        "EXCESIVA"))),
+         `Nivel de intensidad` = as.factor(`Nivel de intensidad`))
+  
+Q1.1 <- Q1 %>%
+  group_by(`Nivel de intensidad`) %>%
+  summarise(Frecuencia = n()) %>%
+  mutate(`Nivel de intensidad` = factor(`Nivel de intensidad`,
+                        levels = c("BAJA", "MEDIA", "ALTA", "EXCESIVA")))
+
+  ggplot(Q1.1, aes(x = `Nivel de intensidad`, y = Frecuencia)) +
+    geom_segment(aes(xend = `Nivel de intensidad`, yend = 0)) +
+    geom_point(size = 4, color = "orange") +
+    scale_x_discrete(limits = c("BAJA", "MEDIA", "ALTA", "EXCESIVA")) +
+    xlab("Categorías de intensidad") +
+    ylab("Número de casos") +
+    ggtitle("Dimensionado de número de casos")
+  
+  ggplot(Q1.1, aes(x = "", y = Frecuencia, fill = `Nivel de intensidad`)) + 
+    geom_bar(width = 1, stat = "identity", color = "black") + 
+    coord_polar(theta = "y", start = 0) + 
+    scale_fill_brewer("Blues") + 
+    blank_theme +
+    geom_text(aes(label = (paste0(round(Frecuencia*100/sum(Frecuencia),
+                                        digits = 1),"%"))),
+                  size = 5,
+                  position = position_stack(vjust = 0.6)) +
+    ggtitle("Dimensionado porcentual de casos")
+  
+  ggplot(Q1, aes(x = carril, y = `intensidad por hora`, fill = carril)) + 
+    geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), scale = "width") +
+    geom_hline(yintercept = 2400, linetype = "dashed",
+               color = "#FF0000", size = 1.2) +
+    theme_bw() +
+    xlab("Carriles") +
+    ylab("Intensidad total por hora") +
+    ggtitle("Distribución de intensidad por hora por carril")
+```
+
+## Distribución de intensidades ligeras y pesadas promedio, por carril, mes y año.
+
+**¿Cómo se distribuyen los datos referentes a la intenidad ligeros e intensidad pesados según el carril y el mes?**
+
+Obtención del dataframe __Q2__.
+1. Se utiliza al __dataframe TD_imputados__.
+2. **group_by.** Se agrupa la información ahora por cada mes en el __dataframe__ y por `carril`.
+3. **summarise.** Obtiene la suma (minuto a minuto, por mes) de la `intensidad ligeros` y la `intensidad pesados`, para obtener el total de cada tipo de intensidad mensual.
+4. **gather.** Para poder graficar la información, se utiliza esta función que tranforma el tipo de tabla a una tabla larga en donde, para cada agrupación, exite una variable llamada `Tipo de intensidad` que tiene por valores `ligeros` y `pesados`, y otra variable `Intensidad` que tiene su valor.
+
+La gráfica resultante es una gráfica en donde se muestran 8 casos, separados por carril y por año. En cada uno e ellos, se muestra la relación entre `intensidad ligeros` e `intensidad pesados` de forma mensual. La intensidad se muestra representada en uno por cada mil.
+
+
+```{r fig.width=10, fig.height=10, echo=F}
+Q2 <- TD_imputados %>%
+      group_by(anio, mes, carril) %>%
+      summarise(`ligeros` = sum(`intensidad ligeros`),
+                `pesados` = sum(`intensidad pesados`)) %>%
+      gather(key = "Tipo de intensidad", 
+             value = "Intensidad", `ligeros`, `pesados`)
+
+ggplot(Q2, aes(x = mes, y = Intensidad/1000, fill = `Tipo de intensidad`)) +
+      geom_bar(stat = "identity", color = "black", position = position_stack(reverse = TRUE)) +
+      facet_wrap(vars(anio, carril),
+                 ncol = 2,
+                 labeller = "label_both",
+                 strip.position = "top",
+                 scales = "free_y") +
+      ggtitle("Intensidad en tráfico mensual") +
+      xlab("Meses") +
+      ylab("Intensidad en millares") +
+      basics_theme
+```
+
+Del gráfico anterior se pueden hacer varias deducciones:
+  a) El carril en donde, sin duda, hay mayor intensidad mensual en cada mes, es el carril número 3, duplicando la intensidad media en el carril 4 en ambos años, siendo cercana a los 600,000 vehículos transitados mensualmente.
+  b) La intensidad de los pesados es casi nula a comparación de la intensidad de los ligeros, sin embargo, en 2017 en el carril 2, existió una gran demanda por parte de los pesados.
+  c) La menor intensidad capturada en un mes fue por parte del carril número 2, en el mes de septiembre del año 2018, con una intensidad cercana a los 1,500 vehículos mensuales.
+  d) Por los carriles 3 y 4, correspondientes a alta velocidad, circulan practicamente nulos vehículos pesados.
+
+## Distribución de la velocidad, por carril, hora y año.
+
+**¿Cómo se distribuyen los datos referentes a la velocidad media según el carril y la hora?**
+
+Obtención del dataframe __Q3__.
+1. Se utiliza al __dataframe TD_imputados__.
+2. **select.** Selecciona todas las variables numéricas que surgen de una medición previa, es decir, desde `intensidad total` hasta `distancia media entre vehiculos`, así como las variables `año`, `hora` y `carril`.
+3. **group_by.** Se agrupa la información ahora por cada año y hora en el __dataframe__ y por `carril`.
+4. **summarise.** Obtiene la media de la `velocidad media`, para obtener su valor respecto a la hora del día por año.
+
+La gráfica resultante es una gráfica en donde se muestran 8 casos, separados por carril y por año. En cada uno e ellos, el desarrollo de la `velocidad media` de forma horaria, es decir, por cada hora en cada día del año -en promedio- qué valor adquiere la `velocidad media`. Así mismo, se le ha agregado una línea de densidad, para observar con mayor nitidez el comportamiento de la variable.
+
+```{r fig.width=10, fig.height=10, echo=F}
+Q3 <- TD_imputados %>%
+      select(anio, hora, carril, `velocidad media`) %>%
+      group_by(anio, hora, carril) %>%
+      summarise(total = mean(`velocidad media`))
+
+ggplot(Q3, aes(x = hora, y = total, fill = carril)) + 
+      geom_bar(stat = "identity", position = "dodge", color = "black") +
+      geom_smooth(color = "black",
+                  size = 2,
+                  se = FALSE,
+                  lwd = 1,
+                  alpha = 0.5) +
+      scale_fill_brewer(palette = 15) +
+      facet_wrap(vars(anio, carril),
+                 ncol = 2,
+                 labeller = "label_both",
+                 strip.position = "top",
+                 scale = "free_y") +
+      ggtitle("Velocidad media por hora por carril") +
+      xlab("Horas") +
+      ylab("Velocidad media") +
+      basics_theme
+```
+
+Del grafico resultante, es posible concluir que:
+ a) La `velocidad media` mas constante se establece en el carril 3, con una velocidad media horaria de 90 km/h; aún así, en ambos años presenta la misma morfología, teniendo un mínimo a las 3 de la mañana, con un promedio de 60 km/h.
+ b) Todos los carriles presentan una disminución significativa de su velocidad entre las horas 1:00 y 5:00.
+ c) El carril con la `velocidad media` promedio más alta es el carril 4 durante el medio día y la tarde.
+ d) Los carriles 1, 3 y 4 mantienen una distribución muy similar durante cada año, sin embargo, el carril 2 sufre una modificación robusta en su distribución, pasando de ser muy estable al cambio horario, a ser totalmente dinámico, con una reducción en su velocidad promedio de hasta 8 veces.
+
+## Representación de velocidad media con respecto a la ocupación, según el carril y el año.
+
+Se inicia por la búsqueda de una relación entre dos variables que llaman la atención: `ocupación` y `velocidad media` y, para ver aún más allá, se segmentará la información por `año` y `carril`.
+
+Obtención del dataframe __Q4__.
+1. Se utiliza al __dataframe TD_imputados__.
+2. **select.** Selecciona las variables de interés: `velocidad media` y `ocupación`, así como las variables `año`, `mes`, ``día` y `carril`.
+3. **group_by.** Se agrupa la información ahora por año, mes y día en el __dataframe__ y por `carril`.
+4. **summarise_at.** Obtiene la media tanto de la `velocidad media` como de la `ocupación`, para obtener su valor respecto al día del año.
+
+La gráfica resultante muestra un punto por cada día en el conjunto original, es decir, 730 puntos, aproximadamente, por carril. Así mismo, se encuentra la información separada por carril y por año, por color y forma, respectivamente.
+
+```{r, echo=F}
+Q4 <- TD_imputados %>% 
+  select(anio, mes, dia, `velocidad media`, ocupacion, carril) %>%
+  group_by(anio, mes, dia, carril) %>%
+  summarise_at(vars(`velocidad media`, ocupacion), list(~mean(.)))
+
+ggplot(Q4, aes(x = ocupacion, y = `velocidad media`, color = carril)) + 
+  geom_point(aes(shape = as.factor(anio)), size = 2) +
+  scale_colour_brewer(type = 'qual', palette = 'BrBG') +
+  xlab("Ocupación") +
+  ylab("Velocidad Media") +
+  labs(colour = "Carril",
+       shape = "Año") +
+  theme_bw() +
+  xlim(0, 10) + 
+  ggtitle("Relación velocidad - ocupación")
+```
+
+## Representación estadística de la distancia media entre vehículos
+
+Este apartado es un poco especial, se busca responder a la siguiente pregunta.
+Si estoy viendo un automóvil en la carretera en una semana particular, **¿con qué certeza encontraré su distancia con el vehículo más próximo?**
+
+Obtención del dataframe __Q4__.
+1. Se utiliza al __dataframe TD_no_zeros__, ya que la pregunta supone que se está observando a un automóvil, por lo tanto, se deben de considerar datos en donde exista información sobre automóviles en ese momento.
+2. **select.** Selecciona las variables de interés: `distancia media entre vehículos`, `año` y `semana`.
+3. **group_by.** Se agrupa la información ahora por año y semana.
+4. **summarise.** Se obtienen los cuantiles importantes para la variable en cuestión. Dichos cuantiles serán 5%, 25%, 50%, 75% y 95%.
+
+La gráfica resultante muestra una sucesión de áreas 
+
+```{r, echo=F}
+Q5 <- TD_no_zero %>%
+select(anio, semana, `distancia media entre vehiculos`) %>%
+  group_by(anio, semana) %>%
+  summarise(Q05 = quantile(`distancia media entre vehiculos`, probs = 0.05),
+            Q25 = quantile(`distancia media entre vehiculos`, probs = 0.25),
+            Q50 = quantile(`distancia media entre vehiculos`, probs = 0.50),
+            Q75 = quantile(`distancia media entre vehiculos`, probs = 0.75),
+            Q95 = quantile(`distancia media entre vehiculos`, probs = 0.95))
+
+ggplot(Q5, aes(x = semana)) + 
+  geom_area(aes(y = Q95), fill = "#999999", color = "#999999", alpha = 0.5) +
+  geom_area(aes(y = Q75), fill = "#333333", color = "#333333", alpha = 0.5) +
+  geom_area(aes(y = Q50), fill = "#E69F00", color = "#E69F00", alpha = 0.5) +
+  geom_area(aes(y = Q25), fill = "#CC6633", color = "#CC6633", alpha = 0.5) +
+  geom_area(aes(y = Q05), fill = "#FFCC00", color = "#FFCC00", alpha = 0.5) +
+  theme_minimal() +
+  facet_wrap(~ anio, ncol = 2) +
+  xlab("Semana") +
+  ylab("Distancia media") +
+  ggtitle("Distribución de distancia por cuantiles")
+```
+
+Las deducciones a obtener a partir de esta gráfica son:
+ a) Podemos deducir a simple vista que los carriles 1, 3 y 4 no resultan afectados por la distinción de año, sin embargo, la distribución del carril 2 cambia radicalmente, en parte, por lo visto en la gráfica anterior.
+ b) Es posible, a grandes rasgos, definir los siguientes pares según la agrupación de puntos:
+    * **carril 1** - ocupación 1.0% - velocidad 70 km/h.
+    * **carril 2** - ocupación 5.0% - velocidad 95 km/h - año 2017.
+                     ocupación 5.0% - velocidad 10 km/h - año 2018.
+    * **carril 3** - ocupación 4.5% - velocidad 100 km/h.
+    * **carril 4** - ocupación 2.5% - velocidad 85 km/h.
+
+Correlación...
+
+```{r echo=F}
+TD_no_zero %>%
+  select(`intensidad total`:`distancia media entre vehiculos`, `carril`) %>%
+  filter(carril == 3) %>%
+  select(-carril) %>%
+  ggpairs()
+```
+
+¿Distribución normal?
+
+```{r, echo=F}
+DN <- TD_no_zero %>%
+  filter(carril == 3)
+qqPlot(DN$`intensidad total`)
+```
+
+
+
+Data frame categorizado
+
+```{r, echo=F}
+TD_cat <- TD_horas %>%
+  mutate(`intensidad total` = ifelse(`intensidad total`     < 92.0 ,  "MB",
+                              ifelse(`intensidad total`     < 332.0,  "B",
+                              ifelse(`intensidad total`     < 2173.6, "M",
+                              ifelse(`intensidad total`     < 2942.9, "A",
+                                                                      "MA")))),
+         `intensidad pesados` = ifelse(`intensidad pesados` < 4.4 ,   "MB",
+                              ifelse(`intensidad pesados`   < 19.9 ,  "B",
+                              ifelse(`intensidad pesados`   < 80.4 ,  "M", 
+                              ifelse(`intensidad pesados`   < 171.0,  "A", 
+                                                                      "MA")))),
+         `intensidad ligeros` = ifelse(`intensidad ligeros` < 83.6,   "MB",
+                              ifelse(`intensidad ligeros`   < 307.0,  "B",
+                              ifelse(`intensidad ligeros`   < 2069.0, "M",
+                              ifelse(`intensidad ligeros`   < 2835.4, "A",
+                                                                      "MA")))),
+         `velocidad media`  = ifelse(`velocidad media`      < 26.9 ,  "MB",
+                              ifelse(`velocidad media`      < 58.2,   "B",
+                              ifelse(`velocidad media`      < 96.0,   "M",
+                              ifelse(`velocidad media`      < 104.2,   "A",
+                                                                      "MA")))),
+         `ocupacion`        = ifelse(`ocupacion`            < 0.2 ,   "MB",
+                              ifelse(`ocupacion`            < 2.5,    "B",
+                              ifelse(`ocupacion`            < 9.1,    "M",
+                              ifelse(`ocupacion`            < 16.3,   "A",
+                                                                      "MA")))),
+         `distancia media entre vehiculos`
+                 = ifelse(`distancia media entre vehiculos` < 57.4 ,  "MB",
+                   ifelse(`distancia media entre vehiculos` < 99.2,   "B",
+                   ifelse(`distancia media entre vehiculos` < 133.3,  "M", 
+                   ifelse(`distancia media entre vehiculos` < 155.9,  "A", 
+                                                                      "MA"))))) %>%
+          mutate_if(is.character, factor, levels = c("MB","B","M","A","MA"))
+```
+
+Test Chi cuadrada a todos:
+
+```{r, echo=F}
+chisq.test(table(TD_cat$`ocupacion`, TD_cat$`velocidad media`), correct = FALSE)
+
+chisq.test(table(TD_cat$`intensidad total`, TD_cat$`distancia media entre vehiculos`), correct = FALSE)
+
+mosaicplot(table(TD_cat$`ocupacion`, TD_cat$`velocidad media`),
+           main = "Tabla de Contingencia (mosaico)",
+           xlab = "Ocupación", ylab = "Velocidad media", color = 2:6)
+
+mosaicplot(table(TD_cat$`intensidad total`, TD_cat$`distancia media entre vehiculos`),
+           main = "Tabla de Contingencia (mosaico)",
+           xlab = "Intensidad total", ylab = "Distancia media entre vehiculos", color = 2:6)
+```
+
+
+
+

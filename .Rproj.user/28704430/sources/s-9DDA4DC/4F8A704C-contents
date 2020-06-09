@@ -1,0 +1,373 @@
+---
+title: "Mini Proyecto 2020. Datos Tráfico"
+author: "Stefan Lahud García, Olivia Sarahì Vargas Vásquez"
+date: "07 de abril de 2020"
+output:
+  html_document:
+    echo: yes
+    number_sections: yes
+    theme: flatly
+    toc: yes
+  pdf_document:
+    toc: yes
+subtitle: Tratamiento de Datos, Grado en Ciencia de Datos - UV
+---
+
+```{r setup, cache = F, echo = F, message = F, warning = F, tidy = F}
+# CONFIGURACIÓN GENERAL
+library(knitr)
+options(width = 100)
+# Opciones generales chunks
+opts_chunk$set(echo = T, message = F, error = F, warning = F,
+               comment = NA, fig.align = 'center', dpi = 100, tidy = F,
+               cache.path = '.cache/', fig.path = './figure/')
+# options(xtable.type = 'html')
+knit_hooks$set(inline = function(x) {
+  if(is.numeric(x)) {
+    round(x, getOption('digits'))
+  } else {
+    paste(as.character(x), collapse = ', ')
+  }
+})
+# knit_hooks$set(plot = knitr:::hook_plot_html)
+knitr::opts_chunk$set(fig.width=8, fig.height=4)
+```
+
+```{r eval = TRUE, include = FALSE}
+# Especificamos las librerías necesarias en esta lista
+packages = c("tidyverse", "knitr", "ggplot2", "tidyr", "dplyr", "skimr", "lubridate", "GGally", "car")
+# use this function to check if each package is on the local machine
+# if a package is installed, it will be loaded
+# if any are not, the missing package(s) will be installed and loaded
+package.check <- lapply(packages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE)
+    library(x, character.only = TRUE)
+  }
+})
+# verify they are loaded
+search()
+```
+
+```{r}
+library(readr); library(tidyverse); library(ggplot2); library(tidyr); library(dplyr); library(skimr); library(lubridate); library(GGally); library(car)
+```
+
+# Tareas realizadas por cada uno de los miembros del equipo:
+
+
+## Stefan. Lahud (_coordinador_). Tareas:
+
+* Tarea 1.1
+* Tarea 1.2
+
+## Sarahí. Vargas. Tareas:
+
+* Tarea 2.1
+* Tarea 2.2
+
+# Introducción y objetivos.
+
+El objetivo de este trabajo es enfrentar un problema de tratamiento de datos que abarque todas las etapas que se han visto a lo largo del curso de Tratamiento de Datos, resolviendo los problemas que se vayan generando de forma autónoma. Dichas etapas son:
+
+  1. Importación de datos.
+  2. Visualización de datos.
+  3. Manejo de datos.
+  4. Análisis exploratorio.
+  
+En este proyecto se analizarán un conjunto de datos reales proporcionados por la empresa _CPS Infraestructuras, Movilidad y Medio ambiente (www.cps.es)_, exclusivamente con la finalidad de realizar este proyecto. Así mismo, se dividirá en las siguientes *fases*:
+
+  0. Lectura de la documentación (_Codebook_) proporcionada con los datos.
+  1. Importación de datos _./data_
+  2. Acondicionamiento de los datos para que se correspondan con un _tidy data_.
+  3. Análisis exploratorio. - ¿Qué datos tenemos? - ¿Qué análisis podemos plantearnos? - ¿Qué podemos buscar en estos datos?
+  4. Utilización de todas las herramientas que se han ido viendo a lo largo del curso, para analizar y describir los datos (análisis univariante, bivariante, relaciones entre variables, etc), inclusión de información adicional que se considere que pueda ser de utilidad (enriquecimiento de los datos).
+
+# Importación de los datos.
+
+Para comenzar con el trabajo, es necesario importar los ficheros de los cuatro carriles para cada año, es decir, ocho _data frames_. Asì mismo, con ayuda de la librería *readr*, podemos seleccionar el caracter con el que se dividen las columnas ";", y dar formato a variable `fecha y hora` como DateTime. Ahora bien, utilizando la función *skim*, podemos observar un resumen de uno de los ocho ficheros, para observar sus características fácilmente.
+
+Asimismo, debido a que el formato seleccionado para mostrar un _NA_ fue _\N_, se convertirán todas las columnas a tipo numérico, con la finalidad de que las cadenas de texto se conviertan en *NA*, mientras que los datos numéricos se mantengan como tal.
+```{r}
+rm(list=ls())
+import <- lapply(list.files("./data", full.names = TRUE),
+                 read.csv, header = TRUE, sep = ";", stringsAsFactors = FALSE)
+
+All <- do.call(rbind, import)
+All[All == "\\N"] <- NA
+str(All)
+```
+
+Se procede a introducir toda la información a una sola tabla llamada `TD`, donde se encuentren los dos años así como los cuatro carriles. Para ello, es necesario agregar una columna llamada _carril_ en donde se muestre de qué carril se está tratando.
+
+Ahora, se unen todos los data frames, se aprovecha para eliminar las observaciones en donde *todas* las variables sean NA, y posteriormente se arregla el data frame segùn la fecha y hora y el carril.
+
+```{r}
+cortes <- grep(pattern = "^01/01/.* 0:00$", All$fecha.y.hora)
+TD <- All %>%
+      mutate(fecha.y.hora = dmy_hm(fecha.y.hora),
+             carril = ifelse(row_number() < cortes[2], 1,
+                      ifelse(row_number() < cortes[3], 2,
+                      ifelse(row_number() < cortes[4], 3,
+                      ifelse(row_number() < cortes[5], 4,
+                      ifelse(row_number() < cortes[6], 1,
+                      ifelse(row_number() < cortes[7], 2,
+                      ifelse(row_number() < cortes[8], 3, 4))))))),
+             semana = (week(fecha.y.hora) - (week(min(fecha.y.hora)))),
+             día_semana = wday(fecha.y.hora, label = TRUE, abbr = FALSE)) %>%
+      complete(fecha.y.hora = seq.POSIXt(min(fecha.y.hora), max(fecha.y.hora),
+                                         by = "mins"), carril) %>%
+      arrange(carril) %>%
+      separate(fecha.y.hora, c("año", "mes", "resto"), sep = "-", convert = TRUE) %>%
+      separate(resto, c("día", "tiempo"), sep = " ", convert = TRUE) %>%
+      separate(tiempo, c("hora", "minutos", "segundos"), sep = ":", convert = TRUE) %>%
+      select(-segundos) %>%
+      select(semana, día_semana, día, mes, año, everything()) %>%
+      mutate_if(is.character, as.numeric) %>%
+      mutate(carril = as.factor(carril),
+             mes = month(mes, label = TRUE))
+
+colnames(TD) <- gsub(".", " ", colnames(TD), fixed = TRUE)
+```
+
+Imputados
+
+```{r}
+TD_imputados <- TD %>%
+  select(año, hora, carril:`distancia media entre vehiculos`) %>%
+  group_by(año, hora, carril) %>%
+  summarise_at(vars(`intensidad total`:`distancia media entre vehiculos`),
+               list(mean = ~mean(., na.rm = TRUE))) %>%
+  ungroup() %>%
+  right_join(TD, c('año', 'hora', 'carril')) %>%
+  mutate(`intensidad total` = ifelse(is.na(`intensidad total`),
+                                          `intensidad total_mean`, `intensidad total`),
+         `intensidad ligeros` = ifelse(is.na(`intensidad ligeros`),
+                                          `intensidad ligeros_mean`, `intensidad ligeros`),
+         `intensidad pesados` = ifelse(is.na(`intensidad pesados`),
+                                          `intensidad pesados_mean`, `intensidad pesados`),
+         `velocidad media` = ifelse(is.na(`velocidad media`),
+                                          `velocidad media_mean`, `velocidad media`),
+         `ocupacion` = ifelse(is.na(`ocupacion`),
+                                          `ocupacion_mean`, `ocupacion`),
+   `distancia media entre vehiculos` = ifelse(is.na(`distancia media entre vehiculos`),
+            `distancia media entre vehiculos_mean`, `distancia media entre vehiculos`)) %>%
+  select(-(`intensidad total_mean`:`distancia media entre vehiculos_mean`)) %>%
+  select(carril, semana, día_semana, día, mes, año, hora, minutos, everything())
+  
+skim(TD_imputados)
+
+kable(head(TD_imputados, n = 15), 
+      format  = "html", 
+      caption = "Cabecera para Datos de Tráfico 2017-2018",
+      align   = "clcccccccccccc",
+      table.attr = "style='width:100%;'")
+```
+
+```{r}
+TD_no_zero <- TD %>%
+  drop_na(`intensidad total`:`distancia media entre vehiculos`) %>%
+  filter_if(is.numeric, all_vars(. != 0))
+
+rm(list=setdiff(ls(), c("TD", "TD_imputados", "TD_no_zero")))
+```
+
+Máximos elementos
+
+```{r}
+select(TD, `intensidad total`:`distancia media entre vehiculos`) %>%
+kable(head(as.data.frame(apply(., MARGIN = 2, sort, decreasing = TRUE))),
+      format  = "html", table.attr = "style='width:100%;'")
+```
+
+Boxplot con y sin ceros
+
+```{r}
+select(TD_imputados, `intensidad total`:`distancia media entre vehiculos`) %>%
+  gather(key = "Medicion", value = "Valor") %>%
+  mutate(Medicion = as.factor(Medicion)) %>%
+ggplot(aes(x = Medicion, y = Valor)) + geom_boxplot()
+  
+select(TD_no_zero, `intensidad total`:`distancia media entre vehiculos`) %>%
+  gather(key = "Medicion", value = "Valor") %>%
+  mutate(Medicion = as.factor(Medicion)) %>%
+ggplot(aes(x = Medicion, y = Valor)) + geom_boxplot()
+```
+
+
+Luego, se comprueban tres parámetros antes de continuar con el análisis de datos:
+
+ 1. La `intensidad total` es la suma de `intensidad ligeros` e `intensidad pesados`.
+ 2. Si el valor de `intensidad total` es cero, entonces el de `velocidad media` también debe de serlo, y viceversa.
+ 3. Corroborar si hay o no algún *NA*.
+ 4. Confirmar si hay algún valor negativo.
+
+```{r}
+#Antes de eliminar datos...
+referencia <- nrow(TD)
+
+#Primer parámetro
+TD <- filter(TD, `intensidad total` == `intensidad ligeros` + `intensidad pesados`)
+nrow(TD) - referencia
+
+#Segundo parámetro
+TD <- filter(TD, (`intensidad total` == 0 & `velocidad media` == 0)|
+                 (`intensidad total` != 0 & `velocidad media` != 0))
+nrow(TD) - referencia
+
+#Tercer parámetro
+any(is.na(TD))
+
+#Cuarto paràmetro
+any(apply(TD, 1, function(row) any(row < 0)))
+```
+Se puede apreciar que ningún parámetro fue necesario para eliminar observaciones. Esto quiere decir que no hay incongruencias en los datos y que las únicas observaciones en donde faltaban datos, eran datos faltantes para toda la observación como tal. Sin embargo, es importante recalcar que estos _tests_ no tienen nada que ver en cuestión de _datos anómalos_ sino que solo descarta el hecho de tener errores en la introducción de datos o, en su defecto, en la omisión de alguno.
+
+Ahora, antes de progresar, se deberá corroborar que -atendiendo a lo adoptado en HCM 2000 (high capacity Manual)- la intensidad no podrá ser superior a la intensidad máxima admisible configurada para el tipo de vía considerada en cada caso. La capacidad de una vía de alta capacidad es  2400  vehículos a la hora por carril.
+
+```{r}
+Q1 <- TD_imputados %>%
+  select(hora, día, mes, año, `intensidad total`, carril) %>%
+  group_by(año, mes, día, hora, carril) %>%
+  summarise(`intensidad por hora` = sum(`intensidad total`)) %>%
+  mutate(`Nivel de intensidad` = ifelse(`intensidad por hora` < 800 , "BAJA",
+                                 ifelse(`intensidad por hora` < 1600, "MEDIA",
+                                 ifelse(`intensidad por hora` < 2400, "ALTA",                                                                                    "EXCESIVA")))) %>%
+  arrange(desc(`intensidad por hora`))
+  
+Q1.1 <- Q1 %>%
+  group_by(`Nivel de intensidad`) %>%
+  summarise(Frecuencia = n()) %>%
+  arrange(desc(Frecuencia))
+
+Q1.1$`Nivel de intensidad` <- factor(Q1.1$`Nivel de intensidad`,
+                                     levels = c("BAJA", "MEDIA", "ALTA", "EXCESIVA"))
+Q1$`Nivel de intensidad` <- as.factor(Q1$`Nivel de intensidad`)
+  
+  ggplot(Q1.1, aes(x = `Nivel de intensidad`, y = Frecuencia)) +
+    geom_segment(aes(xend = `Nivel de intensidad`, yend = 0)) +
+    geom_point(size = 4, color = "orange") +
+    scale_x_discrete(limits = c("BAJA", "MEDIA", "ALTA", "EXCESIVA"))
+  
+  ggplot(Q1.1, aes(x = "", y = Frecuencia, fill = `Nivel de intensidad`)) + 
+    geom_bar(width = 1, stat = "identity", color = "black") + 
+    coord_polar(theta = "y", start = 0) + 
+    scale_fill_brewer("Blues") + 
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.text.x = element_blank(),
+          panel.border = element_blank(),
+          panel.grid = element_blank(),
+          axis.ticks = element_blank(),
+          plot.title = element_text(size = 14, face = "bold")) +
+    geom_text(aes(label = (paste0(round(Frecuencia*100/sum(Frecuencia), digits = 2),"%"))),
+                  size = 5,
+                   position = position_stack(vjust = 0.5)) +
+    ggtitle("Gráfica de pastel")
+  
+  ggplot(Q1, aes(x = carril, y = `intensidad por hora`, fill = carril)) + 
+    geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), scale = "width") +
+    geom_hline(yintercept = 2400, linetype = "dashed", color = "#FF0000", size = 1.2) +
+    theme_bw()
+```
+
+PROPUESTA: ¿En què mes hubo mayor intensidad, por carril?
+```{r fig.width=10, fig.height=10}
+Q2 <- TD_imputados %>%
+      group_by(año, mes, carril) %>%
+      summarise(`ligeros` = mean(`intensidad ligeros`),
+                `pesados` = mean(`intensidad pesados`)) %>%
+      gather(key = "Tipo de intensidad", 
+             value = "Intensidad", `ligeros`, `pesados`)
+
+ggplot(Q2, aes(x = mes, y = Intensidad, fill = `Tipo de intensidad`)) +
+      geom_bar(stat = "identity") +
+      facet_wrap(vars(año, carril), ncol = 2,
+                 labeller = "label_both", strip.position = "top") +
+      ggtitle("Intensidad en tráfico mensual") +
+      xlab("Meses") +
+      ylab("Intensidad") +
+      theme_minimal() +
+      theme(strip.text = element_text(size = 14),
+            axis.text.x = element_text(angle = 45, hjust = 1),
+            legend.title = element_blank(),
+            axis.text = element_text(size = 14),
+            axis.title = element_text(size = 14))
+```
+
+PROPUESTA: ¿Cómo se distribuye la intensidad, por carril y por hora-año?
+```{r fig.width=10, fig.height=10}
+Q3 <- TD_imputados %>%
+      select(año, hora, carril, `intensidad total`) %>%
+      group_by(año, hora, carril) %>%
+      summarise(total = mean(`intensidad total`))
+
+ggplot(Q3, aes(x = hora, y = total, fill = carril)) + 
+      geom_bar(stat = "identity", position = "dodge", color = "black") +
+      geom_smooth(aes(color = as.factor(año)),
+                se = FALSE,
+                lwd = 1,
+                alpha = 0.5) +
+      scale_fill_brewer(palette = 15) +
+      facet_wrap(vars(año, carril), ncol = 2,
+                 labeller = "label_both", strip.position = "top", scale = "free_y") +
+      ggtitle("Intensidad en tráfico horaria por carril") +
+      xlab("Horas") +
+      ylab("Intensidad promedio anual") +
+      theme_bw() +
+      theme(strip.text = element_text(size = 14),
+            axis.text.x = element_text(angle = 45, hjust = 1),
+            legend.title = element_blank(),
+            axis.text = element_text(size = 14),
+            axis.title = element_text(size = 14))
+```
+
+```{r}
+TD_no_zero %>%
+  select(`intensidad total`:`distancia media entre vehiculos`) %>%
+  ggpairs()
+```
+
+Correlación...
+
+```{r}
+qqPlot(TD_no_zero$`intensidad pesados`)
+```
+
+Interesante..
+
+```{r}
+Q6 <- TD_imputados %>%
+select(año, semana, `intensidad total`:`intensidad pesados`) %>%
+  group_by(año, semana) %>%
+  summarise(Total = sum(`intensidad total`),
+            Ligeros = sum(`intensidad ligeros`),
+            Pesados = sum(`intensidad pesados`)) %>%
+  mutate(Total = cumsum(Total/1000),
+         Ligeros = cumsum(Ligeros/1000),
+         Pesados = cumsum(Pesados/1000))
+
+Q_6 <- TD_imputados %>%
+select(año, semana, `velocidad media`) %>%
+  group_by(año, semana) %>%
+  summarise(Median = median(`velocidad media`),
+            Mean = mean(`velocidad media`))
+
+ggplot(Q_6, aes(x = semana)) + 
+  #geom_area(aes(y = Total), fill = "#999999", color = "#999999", alpha = 0.5) +
+  geom_area(aes(y = Median), fill = "#E69F00", color = "#E69F00", alpha = 0.5) +
+  theme_minimal() +
+    facet_wrap(~ año, nrow = 2)
+  
+ggplot(Q_6, aes(x = semana)) + 
+  geom_ribbon(aes(ymin = Median - 1, ymax = Median + 1), fill = "grey70") +
+  geom_line(aes(y = Median))  +
+  geom_line(aes(y = Mean)) +
+    facet_wrap(~ año, ncol = 2)
+```
+
+
+
+
+
+

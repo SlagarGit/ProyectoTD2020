@@ -1,0 +1,3 @@
+"0","mosaicplot(table(TD_cat$`ocupacion`, TD_cat$`velocidad media`),"
+"0","           main = ""Tabla de Contingencia (mosaico)"","
+"0","           xlab = ""Ocupación"", ylab = ""Velocidad media"", color = 2:6)"
